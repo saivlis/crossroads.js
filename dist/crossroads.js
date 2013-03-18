@@ -95,7 +95,18 @@ var factory = function (signals) {
         while (n--) {
             item = queryArr[n].split('=');
             val = shouldTypecast ? typecastValue(item[1]) : item[1];
-            obj[item[0]] = (typeof val === 'string')? decodeURIComponent(val) : val;
+            if (crossroads.handleQueryParamNameDuplicates && obj[item[0]]) {
+            	// if key already exists -> array
+            	if(!Array.isArray(obj[item[0]])) {
+            		var oldVal = obj[item[0]];
+            		var values = [];
+            		values.push(oldVal);
+                	obj[item[0]] = values;
+            	}
+            	obj[item[0]].push((typeof val === 'string')? decodeURIComponent(val) : val);
+            } else {
+            	obj[item[0]] = (typeof val === 'string')? decodeURIComponent(val) : val;
+            }
         }
         return obj;
     }
@@ -113,6 +124,7 @@ var factory = function (signals) {
         this._routes = [];
         this._prevRoutes = [];
         this._piped = [];
+        this.handleQueryParamNameDuplicates = true;
         this.resetState();
     }
 
@@ -127,7 +139,7 @@ var factory = function (signals) {
         ignoreState : false,
 
         shouldTypecast : false,
-
+        
         normalizeFn : null,
 
         resetState : function(){
@@ -429,7 +441,7 @@ var factory = function (signals) {
         },
 
         interpolate : function(replacements) {
-            var str = this._router.patternLexer.interpolate(this._pattern, replacements);
+            var str = this._router.patternLexer.interpolate(this._pattern, replacements, this._router.handleQueryParamNameDuplicates);
             if (! this._validateParams(str) ) {
                 throw new Error('Generated string doesn\'t validate against `Route.rules`.');
             }
@@ -615,11 +627,13 @@ var factory = function (signals) {
             return vals;
         }
 
-        function interpolate(pattern, replacements) {
+        function interpolate(pattern, replacements, handleQueryParamNameDuplicates) {
             if (typeof pattern !== 'string') {
                 throw new Error('Route pattern should be a string.');
             }
 
+            var router = this;
+            
             var replaceFn = function(match, prop){
                     var val;
                     prop = (prop.substr(0, 1) === '?')? prop.substr(1) : prop;
@@ -627,7 +641,17 @@ var factory = function (signals) {
                         if (typeof replacements[prop] === 'object') {
                             var queryParts = [];
                             for(var key in replacements[prop]) {
-                                queryParts.push(encodeURI(key + '=' + replacements[prop][key]));
+                            	console.log("HIER " + handleQueryParamNameDuplicates);
+                            	if (handleQueryParamNameDuplicates && Array.isArray(replacements[prop][key])) {
+                            		// append every array element as single key-value-pair
+                            		if (replacements[prop][key]) {
+                            			for (i in replacements[prop][key]) {
+                            				queryParts.push(encodeURI(key + '=' + replacements[prop][key][i]));
+                            			}
+                            		}
+                            	} else {
+                            		queryParts.push(encodeURI(key + '=' + replacements[prop][key]));
+                            	}
                             }
                             val = '?' + queryParts.join('&');
                         } else {
